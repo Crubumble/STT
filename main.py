@@ -29,6 +29,7 @@ OPEN steps:
 import pandas as pd
 import numpy as np
 import pickle
+import os
 
 ALIN = 0.32         # dif/sec linear increase
 GSP = 94       # challenge each x seconds
@@ -57,7 +58,9 @@ def esti_time(sample, AM=2500, time=28801.0):
         time -= rem_AM * estimator  # with this assumtion no recression needed
         esti_time(sample, AM, time)
     time = time / 3600.0
-    return float(time)
+    hours = int(time)
+    minutes = int(round(((time % 1) * 60), 0))
+    return str('%s h and %s min' % (hours, minutes))
 
 
 def initialCrew(prim, sec, pfac=3.5, sfac=2.5):
@@ -198,7 +201,7 @@ def AnalyseCrew(Anti=2650, newimport=False, filename='example.xls'):
     df_chars = df_chars[df_chars.iloc[:, 3] == 'x']
     # use df_Crew to loo if one of them can be further improved and which att is your weak spot
     print('Useless crew for voyage %s :' % df_chars[df_chars.Name.isin(df.Char) == False].Name.tolist())
-    print('Crew you should fuse %s \n:' % df.loc[df.Char.isin(df_chars[df_chars.Name.isin(df.Char) & (df_chars.Having != df_chars.Maximum)].Name)])
+    print('Crew you should fuse:\n %s ' % df.loc[df.Char.isin(df_chars[df_chars.Name.isin(df.Char) & (df_chars.Having != df_chars.Maximum)].Name)])
     return df_summary, df
 
 
@@ -238,7 +241,6 @@ def setCrew(filename):  # get Data from your Crew
 def getVoyageCrew(prim='SEC', sec='SIC', Anti=2650, newimport=False, filename='example.xls'):
     if newimport:
         setCrew(filename)
-    # TODO checks for parameters
     pfac = 3.5  # probability for att to be pick for challenge
     sfac = 2.5  # probability for att to be pick for challenge
     df_voy, df_slct = initialCrew(prim, sec, pfac, sfac)
@@ -249,7 +251,48 @@ def getVoyageCrew(prim='SEC', sec='SIC', Anti=2650, newimport=False, filename='e
         print('Alternatives used more than once for %s and %s' % (prim, sec))
     # TODO look to the next breaking point
     time = esti_time(sample, Anti)
-    print(time)
-    print(sample)
-    # print(df_voy)
     return df_voy, time, sample
+
+
+if __name__ == '__main__':
+    while True:
+        entered = input("Please choose if you want to analyse your crew "
+               "for all possible voyages or just find the best "
+               "crew for a specific run [Analyses or Voyage] \n")
+        if not entered: break
+        if entered in ['Analyses', 'Voyage']:
+            anti_para = input('Amount of anti matter? ')           
+            try:
+                anti_para = int(anti_para)
+                fn= input('Great. Last question. Do you want to update '
+                               'your crewtable? If yes, please enter the '
+                               'filename. Otherwise example.xls will be used.'
+                               ' In that case press ENTER \n')
+                newimport = True
+                if not fn:
+                    fn = 'example.xls'
+                elif fn not in os.listdir(os.getcwd()):
+                    print('Sorry. %r not in this folder' % fn)
+                    continue
+            except ValueError:
+                print('Anti %i mater must be an integer.' % anti_para)
+                continue            
+            if entered == 'Analyses':
+                df_summary, df = AnalyseCrew(Anti=anti_para, newimport=False, filename='example.xls')
+                x = input('Do you want to see an overview about the voyager times? [Y/y]? ')
+                if (x in ['y', 'Y']):
+                    print(df_summary)
+                break
+            else:
+                prim= input('Well. Really last question. Please set primary and secondary attribute \n'
+                            'Choose from [COM, DIP, SEC, SIC, ENG, MED] \n'
+                            'Please enter your primary attribute \n')
+                sec= input('Please enter your secondary attribute \n')
+                df_voy, time, sample = getVoyageCrew(prim= str.upper(prim), sec=str.upper(sec), Anti=anti_para, newimport=newimport, filename=fn)
+                print('Your voyage lasts %s' % time)
+                print('Sample is %s' % sample)
+                print(df_voy)
+                break
+        else:
+            print("%r is NOT equal Analyses or Voyage. Please also use inital capitals!" % entered)
+            continue
