@@ -30,6 +30,7 @@ import pandas as pd
 import numpy as np
 import pickle
 import os
+from openpyxl import load_workbook, Workbook
 
 ALIN = 0.32         # dif/sec linear increase
 GSP = 94       # challenge each x seconds
@@ -282,12 +283,25 @@ if __name__ == '__main__':
                 x = input('Do you want to see an overview about the voyager times? [Y/y]? ')
                 if (x in ['y', 'Y']):
                     print(df_summary)
+                print('Files are printed out...')
+                writer = pd.ExcelWriter('Analyser.xlsx', engine='openpyxl')
+                writer.book = book = Workbook()
+                df_summary.to_excel(writer,sheet_name='Summary', startrow=1, index=False)
+                df.to_excel(writer,sheet_name='Crew_Usage', startrow=1, index=False)
+                writer.save()
+                writer.close()
                 break
             else:
                 prim= input('Well. Really last question. Please set primary and secondary attribute \n'
                             'Choose from [COM, DIP, SEC, SIC, ENG, MED] \n'
                             'Please enter your primary attribute \n')
+                if not str.upper(prim) in ['COM', 'DIP', 'SEC', 'SIC', 'ENG', 'MED']:
+                    print('Sorry please choose from [COM, DIP, SEC, SIC, ENG, MED]')
+                    continue
                 sec= input('Please enter your secondary attribute \n')
+                if not str.upper(sec) in ['COM', 'DIP', 'SEC', 'SIC', 'ENG', 'MED']:
+                    print('Sorry please choose from [COM, DIP, SEC, SIC, ENG, MED]')
+                    continue
                 df_voy, time, sample = getVoyageCrew(prim= str.upper(prim), sec=str.upper(sec), Anti=anti_para, newimport=newimport, filename=fn)
                 print('Your voyage lasts %s' % time)
                 print('Sample is %s' % sample)
