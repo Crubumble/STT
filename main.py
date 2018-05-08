@@ -29,10 +29,11 @@ OPEN steps:
 import pandas as pd
 import numpy as np
 import pickle
+import sys
 import os
 from openpyxl import load_workbook, Workbook
 
-ALIN = 0.32         # dif/sec linear increase
+ALIN = 0.314         # dif/sec linear increase
 GSP = 94       # challenge each x seconds
 WGAIN = 5       # gain 5 anti matter
 LGAIN = -30
@@ -45,15 +46,16 @@ def gotBot(time, sample, AM_ini):  # estimate the time of the voyage
     sample = sample - YSTART
     sample[sample < 0] = 0
     t_frac = sample/(ALIN * time)
+    opti = t_frac > 1.15
     t_frac[t_frac > 1] = 1
     # TODO adjust greater 1 with fraction less
     share = np.array([0.35, 0.25, 0.1, 0.1, 0.1, 0.1])
     w_sp = (t_frac * share).sum()
-    return AM_ini - time/GST + (WGAIN * w_sp * time/GSP).round() + (LGAIN * (1-w_sp) * time/GSP).round()
+    return opti, AM_ini - time/GST + (WGAIN * w_sp * time/GSP).round() + (LGAIN * (1-w_sp) * time/GSP).round()
 
 
 def esti_time(sample, AM=2500, time=28801.0):
-    rem_AM = gotBot(time, sample, AM)
+    opti, rem_AM = gotBot(time, sample, AM)
     estimator = (1/(-1/GST+1/GSP*LGAIN))  # estimate that last are all fails
     if abs(rem_AM) > 40:
         time -= rem_AM * estimator  # with this assumtion no recression needed
@@ -61,11 +63,11 @@ def esti_time(sample, AM=2500, time=28801.0):
     time = time / 3600.0
     hours = int(time)
     minutes = int(round(((time % 1) * 60), 0))
-    return str('%s h and %s min' % (hours, minutes))
+    return str('%s h and %s min' % (hours, minutes)), opti
 
 
 def initialCrew(prim, sec, pfac=3.5, sfac=2.5):
-    print('prime is %s and second is %s' % (prim, sec))
+    # print('prime is %s and second is %s' % (prim, sec))
     df_Crew = pickle.load(open('staff.p', 'rb'))
     df_Values = df_Crew.copy()
     # multiple first
@@ -164,22 +166,12 @@ def getSample(prim, sec, df_voy, df_slct):  # returns the Series like for got bo
                         chaAtt = str(chaAtt[chaAtt != keep][0])
                         df_voy.loc[(df_voy.Name == char) & (df_voy.Att == chaAtt), 'Name'] = change.loc[(change.Rank == 1) & (change.Att == chaAtt)].Name.iloc[0] # take the first alternative
                         df_voy.loc[(df_voy.Name == char) & (df_voy.Att == keep), 'Name'] = change.loc[(change.Rank == 2) & (change.Att == keep)].Name.iloc[0] # take the second alternative               
-    # Build sample - please make it look nicer if you know how
-    df_Crew = pickle.load(open('staff.p', 'rb'))
-    sample = pd.Series(index=[df_Crew.columns]).fillna(0)
-    for char in df_voy.Name:
-        sample += df_Crew.loc[char, :]
-    vPrim = sample[prim]
-    vScd = sample[sec]
-    del sample[prim]
-    del sample[sec]
-    sample2 = np.array([vPrim, vScd])
-    a = df_voy, np.concatenate((sample2, sample))
-    return df_voy, np.concatenate((sample2, sample))
+    df_voy.reset_index(drop=True, inplace=True)
+    return df_voy
 
 
-def AnalyseCrew(Anti=2650, newimport=False, filename='example.xls'):
-    df = pd.DataFrame(columns=['Primary', 'Second', 'Time', 'COM1', 'COM2', 'DIP1', 'DIP2', 'ENG1', 'ENG2', 'MED1', 'MED2', 'SEC1', 'SEC2', 'SIC1', 'SIC2'], dtype=str)
+def AnalyseCrew(Anti=2650, filename='example.xls'):
+    #df = pd.DataFrame(columns=['Primary', 'Second', 'Time', 'COM1', 'COM2', 'DIP1', 'DIP2', 'ENG1', 'ENG2', 'MED1', 'MED2', 'SEC1', 'SEC2', 'SIC1', 'SIC2'], dtype=str)
     import itertools
     df_Crew = pickle.load(open('staff.p', 'rb'))
     # get all combinations of att and list die chars as well as the time
@@ -187,23 +179,23 @@ def AnalyseCrew(Anti=2650, newimport=False, filename='example.xls'):
     allchallenges = list(itertools.permutations(df_Crew.columns, 2))
     freqNames = ['']
     for a in allchallenges:
-        df, time, sample = getVoyageCrew(prim=a[0], sec=a[1], Anti=Anti, newimport=newimport, filename=filename)
+        df, time, sample = getVoyageCrew(prim=a[0], sec=a[1], Anti=Anti, filename=filename)
         freqNames.extend(df.Name.tolist())
         df_summary.loc[len(df_summary), 'Prim'] = a[0]
         df_summary.loc[len(df_summary)-1, 'Secondary'] = a[1]
         df_summary.loc[len(df_summary)-1, 'Time'] = time 
     # give an overview about how often each crew member is used
-    df = pd.DataFrame(freqNames, columns=['Char'])
-    df = df.groupby(df.columns.tolist()).size().reset_index().rename(columns={0:'count'})    
-    df.sort_values(by='count', ascending=False, inplace=True)
-    df.reset_index(drop=True, inplace=True)
+    df_freq = pd.DataFrame(freqNames, columns=['Char'])
+    df_freq = df_freq.groupby(df_freq.columns.tolist()).size().reset_index().rename(columns={0:'count'})    
+    df_freq.sort_values(by='count', ascending=False, inplace=True)
+    df_freq.reset_index(drop=True, inplace=True)
     del freqNames
     df_chars = pd.read_excel(filename, sheetname='Stats', header=[1], usecols = [0,1,2,3]).fillna('o')
     df_chars = df_chars[df_chars.iloc[:, 3] == 'x']
     # use df_Crew to loo if one of them can be further improved and which att is your weak spot
-    print('Useless crew for voyage %s :' % df_chars[df_chars.Name.isin(df.Char) == False].Name.tolist())
-    print('Crew you should fuse:\n %s ' % df.loc[df.Char.isin(df_chars[df_chars.Name.isin(df.Char) & (df_chars.Having != df_chars.Maximum)].Name)])
-    return df_summary, df
+    print('Useless crew for voyage %s :' % df_chars[df_chars.Name.isin(df_freq.Char) == False].Name.tolist())
+    print('Crew you should fuse:\n %s ' % df_freq.loc[df_freq.Char.isin(df_chars[df_chars.Name.isin(df_freq.Char) & (df_chars.Having != df_chars.Maximum)].Name)])
+    return df_summary, df_freq
 
 
 def setCrew(filename):  # get Data from your Crew
@@ -236,77 +228,123 @@ def setCrew(filename):  # get Data from your Crew
     df_charValues = df_charValues.add(df_state)
     df_charValues = df_charValues.astype(np.float).apply(np.ceil)  # roundingUP
     pickle.dump(df_charValues, open('staff.p', 'wb'))
-    return df_charValues
 
 
-def getVoyageCrew(prim='SEC', sec='SIC', Anti=2650, newimport=False, filename='example.xls'):
-    if newimport:
-        setCrew(filename)
-    pfac = 3.5  # probability for att to be pick for challenge
-    sfac = 2.5  # probability for att to be pick for challenge
-    df_voy, df_slct = initialCrew(prim, sec, pfac, sfac)
-    df_voy, sample = getSample(prim, sec, df_voy, df_slct)
-    while len(df_voy.Name.unique()) != len(df_voy.Name):
-        df_voy, sample = getSample(prim, sec, df_voy, df_slct)
-        # print(df_voy)
-        print('Alternatives used more than once for %s and %s' % (prim, sec))
-    # TODO look to the next breaking point
-    time = esti_time(sample, Anti)
+def buildSample(df_voy, prim, sec):
+    # Build sample
+    df_Crew = pickle.load(open('staff.p', 'rb'))
+    sample = df_Crew[df_Crew.index.isin(df_voy.Name)].sum()
+    vPrim = sample[prim]
+    vScd = sample[sec]
+    del sample[prim]
+    del sample[sec]
+    sample_start = np.array([vPrim, vScd])
+    return np.concatenate((sample_start, sample))
+
+
+def getVoyageCrew(prim='SEC', sec='SIC', Anti=2650,
+                  filename='example.xls',
+                  pfac=3.5, sfac=2.5):
+    df_voy, time, sample, opti = optimizer(prim=prim, sec=sec, Anti=Anti,
+                                           pfac=3.5, sfac=2.5)
+
+    while opti.any():
+        if opti[0]:
+            pfac -= 0.20
+            # sfac += 0.05
+        if opti[1]:
+            sfac -= 0.20
+        if not opti[0:2].any():
+            print('Neither prim nor sec attribute are great.'
+                  'Optimization failed')
+            break
+        else:
+            df_voy, time, sample, opti = optimizer(prim=prim, sec=sec,
+                                                   Anti=Anti,
+                                                   pfac=pfac, sfac=sfac)
     return df_voy, time, sample
 
 
+def optimizer(prim='SEC', sec='SIC', Anti=2650,
+              pfac=3.5, sfac=2.5):
+    # pfac = 3.5  # probability for att to be pick for challenge
+    # sfac = 2.5  # probability for att to be pick for challenge
+    df_voy, df_slct = initialCrew(prim, sec, pfac, sfac)
+    # df_voy = getSample(prim, sec, df_voy, df_slct)
+    if len(df_voy) == 0:
+        print('ERROR. Crew selection is empty!')
+        sys.exit()
+    c = 0
+    while (len(df_voy.Name.unique()) != len(df_voy.Name)) & (c < 5):
+        df_voy = getSample(prim, sec, df_voy, df_slct)
+        c += 1
+        # print(df_voy)
+        # print('Alternatives used more than once for %s and %s' % (prim, sec))
+    sample = buildSample(df_voy, prim, sec)
+    # TODO look to the next breaking point
+    time, opti = esti_time(sample, Anti)
+    return df_voy, time, sample, opti
+
+
 if __name__ == '__main__':
+    
     while True:
         entered = input("Please choose if you want to analyse your crew "
-               "for all possible voyages or just find the best "
-               "crew for a specific run [Analyses or Voyage] \n")
-        if not entered: break
+                        "for all possible voyages or just find the best "
+                        "crew for a specific run [Analyses or Voyage] \n"
+                        "Exit with empty input [ENTER]\n")
+        if not entered:
+            break
         if entered in ['Analyses', 'Voyage']:
-            anti_para = input('Amount of anti matter? ')           
+            anti_para = input('Amount of anti matter? ')
             try:
                 anti_para = int(anti_para)
-                fn= input('Great. Last question. Do you want to update '
-                               'your crewtable? If yes, please enter the '
-                               'filename. Otherwise example.xls will be used.'
-                               ' In that case press ENTER \n')
-                newimport = True
+                fn = input('Great. Last question. Do you want to update '
+                           'your crewtable? If yes, please enter the '
+                           'filename. Otherwise example.xls will be used.'
+                           ' In that case press ENTER \n')
                 if not fn:
                     fn = 'example.xls'
                 elif fn not in os.listdir(os.getcwd()):
                     print('Sorry. %r not in this folder' % fn)
                     continue
+                setCrew(fn)
             except ValueError:
                 print('Anti %i mater must be an integer.' % anti_para)
-                continue            
+                continue
             if entered == 'Analyses':
-                df_summary, df = AnalyseCrew(Anti=anti_para, newimport=False, filename='example.xls')
+                df_summary, df = AnalyseCrew(Anti=anti_para, filename='example.xls')
                 x = input('Do you want to see an overview about the voyager times? [Y/y]? ')
                 if (x in ['y', 'Y']):
                     print(df_summary)
                 print('Files are printed out...')
                 writer = pd.ExcelWriter('Analyser.xlsx', engine='openpyxl')
                 writer.book = book = Workbook()
-                df_summary.to_excel(writer,sheet_name='Summary', startrow=1, index=False)
-                df.to_excel(writer,sheet_name='Crew_Usage', startrow=1, index=False)
+                df_summary.to_excel(writer, sheet_name='Summary', startrow=1, index=False)
+                df.to_excel(writer, sheet_name='Crew_Usage', startrow=1, index=False)
                 writer.save()
                 writer.close()
                 break
             else:
-                prim= input('Well. Really last question. Please set primary and secondary attribute \n'
-                            'Choose from [COM, DIP, SEC, SIC, ENG, MED] \n'
-                            'Please enter your primary attribute \n')
+                prim = input('Well. Really last question. Please set primary and secondary attribute \n'
+                             'Choose from [COM, DIP, SEC, SIC, ENG, MED] \n'
+                             'Please enter your primary attribute \n')
                 if not str.upper(prim) in ['COM', 'DIP', 'SEC', 'SIC', 'ENG', 'MED']:
                     print('Sorry please choose from [COM, DIP, SEC, SIC, ENG, MED]')
                     continue
-                sec= input('Please enter your secondary attribute \n')
+                sec = input('Please enter your secondary attribute \n')
                 if not str.upper(sec) in ['COM', 'DIP', 'SEC', 'SIC', 'ENG', 'MED']:
                     print('Sorry please choose from [COM, DIP, SEC, SIC, ENG, MED]')
                     continue
-                df_voy, time, sample = getVoyageCrew(prim= str.upper(prim), sec=str.upper(sec), Anti=anti_para, newimport=newimport, filename=fn)
+                df_voy, time, sample = getVoyageCrew(prim=str.upper(prim),
+                                                     sec=str.upper(sec),
+                                                     Anti=anti_para,
+                                                     filename=fn)
                 print('Your voyage lasts %s' % time)
                 print('Sample is %s' % sample)
                 print(df_voy)
                 break
         else:
-            print("%r is NOT equal Analyses or Voyage. Please also use inital capitals!" % entered)
+            print("%r is NOT equal Analyses or Voyage. "
+                  "Please also use inital capitals!" % entered)
             continue

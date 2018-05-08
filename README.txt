@@ -10,12 +10,13 @@ For programmers:
 
 important functions:
     
-1. AnalyseCrew(Anti=2650, newimport=False, filename= 'example.xls')
+1. AnalyseCrew() -  takes about a minute!
 If you want to check your list of crew member select this function. It provides
 an overview how often a char is used when all combinations of voyages are
 analysed. Also suggest which crew can be further fused (together with the frequency and rank of the crew)
 
-2. getVoyageCrew(prim='DIP', sec='ENG', Anti=2650, newimport=False, filename='example.xls')
+
+2. getVoyageCrew()
 If you just want the present Crew for specific attributes
 
 OPEN steps:
@@ -25,3 +26,4 @@ OPEN steps:
     3.1 Code usage/style
     3.2 Improve algorithm by using dilemma steps
         Avoid: [14000, 8000, 2500, 4000, 2000, 2000] to something like [11000, 9500, ...]
+	Done but not ready yet
