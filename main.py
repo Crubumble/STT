@@ -22,6 +22,7 @@ OPEN steps:
     3.2 Improve algorithm by using dilemma steps
         Avoid: [14000, 8000, 2500, 4000, 2000, 2000] to something like [11000, 9500, ...]
 
+TODO improve runtime
 
 
 
@@ -46,12 +47,12 @@ def gotBot(time, sample, AM_ini):  # estimate the time of the voyage
     sample = sample - YSTART
     sample[sample < 0] = 0
     t_frac = sample/(ALIN * time)
-    opti = t_frac > 1.15
+    opti = t_frac > 1.1
     t_frac[t_frac > 1] = 1
     # TODO adjust greater 1 with fraction less
     share = np.array([0.35, 0.25, 0.1, 0.1, 0.1, 0.1])
     w_sp = (t_frac * share).sum()
-    return opti, AM_ini - time/GST + (WGAIN * w_sp * time/GSP).round() + (LGAIN * (1-w_sp) * time/GSP).round()
+    return opti, float(AM_ini - time/GST + (WGAIN * w_sp * time/GSP).round() + (LGAIN * (1-w_sp) * time/GSP).round())
 
 
 def esti_time(sample, AM=2500, time=28801.0):
@@ -60,10 +61,11 @@ def esti_time(sample, AM=2500, time=28801.0):
     if abs(rem_AM) > 40:
         time -= rem_AM * estimator  # with this assumtion no recression needed
         esti_time(sample, AM, time)
-    time = time / 3600.0
+    # time = time / 3600.0
     hours = int(time)
     minutes = int(round(((time % 1) * 60), 0))
-    return str('%s h and %s min' % (hours, minutes)), opti
+    #return str('%s h and %s min' % (hours, minutes)), opti
+    return time, opti
 
 
 def initialCrew(prim, sec, pfac=3.5, sfac=2.5):
@@ -176,6 +178,7 @@ def AnalyseCrew(Anti=2650, filename='example.xls'):
     df_Crew = pickle.load(open('staff.p', 'rb'))
     # get all combinations of att and list die chars as well as the time
     df_summary = pd.DataFrame(columns=['Prim', 'Secondary', 'Time'])
+    df_summary = df_summary.astype( {u'Time': np.float})
     allchallenges = list(itertools.permutations(df_Crew.columns, 2))
     freqNames = ['']
     for a in allchallenges:
@@ -183,7 +186,7 @@ def AnalyseCrew(Anti=2650, filename='example.xls'):
         freqNames.extend(df.Name.tolist())
         df_summary.loc[len(df_summary), 'Prim'] = a[0]
         df_summary.loc[len(df_summary)-1, 'Secondary'] = a[1]
-        df_summary.loc[len(df_summary)-1, 'Time'] = time 
+        df_summary.loc[len(df_summary)-1, 'Time'] = round(time / 3600.0, 3)
     # give an overview about how often each crew member is used
     df_freq = pd.DataFrame(freqNames, columns=['Char'])
     df_freq = df_freq.groupby(df_freq.columns.tolist()).size().reset_index().rename(columns={0:'count'})    
@@ -247,21 +250,45 @@ def getVoyageCrew(prim='SEC', sec='SIC', Anti=2650,
                   pfac=3.5, sfac=2.5):
     df_voy, time, sample, opti = optimizer(prim=prim, sec=sec, Anti=Anti,
                                            pfac=3.5, sfac=2.5)
-
-    while opti.any():
+    pfac_changer = 0.5
+    sfac_changer = 0.5
+    changer = False
+    opti_old = opti
+    counter = 0
+    while (opti.any()) & (counter < 25):
+        time_old = time
         if opti[0]:
-            pfac -= 0.20
+            if changer:
+                pfac += pfac_changer
+                pfac_changer = pfac_changer - 0.1
+            else:
+                pfac -= pfac_changer
             # sfac += 0.05
         if opti[1]:
-            sfac -= 0.20
+            if changer:
+                sfac += sfac_changer
+                sfac_changer = sfac_changer - 0.1
+            else:
+                sfac -= sfac_changer
         if not opti[0:2].any():
             print('Neither prim nor sec attribute are great.'
                   'Optimization failed')
             break
         else:
+            changer = False
             df_voy, time, sample, opti = optimizer(prim=prim, sec=sec,
                                                    Anti=Anti,
                                                    pfac=pfac, sfac=sfac)
+            # print(prim, sec, time_old, time, pfac, sfac)
+            if time < time_old - 300:
+                opti = opti_old
+                changer = True
+            else:
+                opti_old = opti
+                counter += 1
+            if (sfac < 1.0) | (pfac < 1.0):
+                print('Other attributes too weak...')
+                break
     return df_voy, time, sample
 
 
@@ -301,14 +328,17 @@ if __name__ == '__main__':
                 anti_para = int(anti_para)
                 fn = input('Great. Last question. Do you want to update '
                            'your crewtable? If yes, please enter the '
-                           'filename. Otherwise example.xls will be used.'
-                           ' In that case press ENTER \n')
+                           'filename. Otherwise staff.p will be used. '
+                           'In that case press ENTER \n')
                 if not fn:
-                    fn = 'example.xls'
+                    if 'staff.p' not in os.listdir(os.getcwd()):
+                        fn = 'example.xls'
+                        setCrew(fn)
                 elif fn not in os.listdir(os.getcwd()):
                     print('Sorry. %r not in this folder' % fn)
                     continue
-                setCrew(fn)
+                else:
+                    setCrew(fn)
             except ValueError:
                 print('Anti %i mater must be an integer.' % anti_para)
                 continue
@@ -340,7 +370,8 @@ if __name__ == '__main__':
                                                      sec=str.upper(sec),
                                                      Anti=anti_para,
                                                      filename=fn)
-                print('Your voyage lasts %s' % time)
+                time = time / 3600.0
+                print('Your voyage lasts %f' % time)
                 print('Sample is %s' % sample)
                 print(df_voy)
                 break
@@ -348,3 +379,4 @@ if __name__ == '__main__':
             print("%r is NOT equal Analyses or Voyage. "
                   "Please also use inital capitals!" % entered)
             continue
+    input('Program ends with any key and press ENTER')
