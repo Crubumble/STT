@@ -24,6 +24,4 @@ OPEN steps:
 2. Improve anaylses by showing the impact of fusing a char
 3. Improve sample function
     3.1 Code usage/style
-    3.2 Improve algorithm by using dilemma steps
-        Avoid: [14000, 8000, 2500, 4000, 2000, 2000] to something like [11000, 9500, ...]
-	Done but not ready yet
+    3.2 Improve algorithm by user intel
