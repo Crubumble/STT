@@ -1,0 +1,9 @@
+ALIN = 0.314	# dif/sec linear increase
+GSP = 94		# challenge each x seconds
+WGAIN = 5		# gain 5 anti matter
+LGAIN = -30		# lost AM per challenge
+GST = 26		# standard challenge every sec
+YSTART = 500	# difficulty at time t = 0 sec
+CHANGER = 0.1   # if INICHANGE make time worse reduce the factor with this less
+INICHANGE = 0.5  # reduce the multiplication factor for the prim and sec att
+LOOPS = 20		# in case of an infinity loop exit counter

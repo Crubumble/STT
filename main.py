@@ -10,6 +10,10 @@ OPEN steps:
     3.2 Improve algorithm by user intel
 
 TODO improve runtime
+search doubles or double use 
+
+Fehler bei SEC COM im vergelich zu alter version drop from 8.5 to 8 h
+
 
 
 
@@ -19,15 +23,20 @@ import numpy as np
 import pickle
 import sys
 import os
+import math
 from openpyxl import Workbook
 
+
+# default values
 ALIN = 0.314         # dif/sec linear increase
 GSP = 94       # challenge each x seconds
 WGAIN = 5       # gain 5 anti matter
 LGAIN = -30
 GST = 26       # standard challenge every y sec
 YSTART = 500   # difficulty at time t = 0 sec
-# sample = np.array([9797, 7614, 5853, 2938, 6262, 2055])
+CHANGER = 0.1   # if INICHANGE make time worse reduce the factor with this less
+INICHANGE = 0.5  # reduce the multiplication factor for the prim and sec att
+LOOPS = 100  # in case of an infinity loop exit counter
 
 
 def gotBot(time, sample, AM_ini):  # estimate the time of the voyage
@@ -38,7 +47,7 @@ def gotBot(time, sample, AM_ini):  # estimate the time of the voyage
     t_frac[t_frac > 1] = 1
     share = np.array([0.35, 0.25, 0.1, 0.1, 0.1, 0.1])
     w_sp = (t_frac * share).sum()
-    return opti, float(AM_ini - time/GST + (WGAIN * w_sp * time/GSP).round() + (LGAIN * (1-w_sp) * time/GSP).round())
+    return opti, float(AM_ini - time/GST + WGAIN * math.ceil(w_sp * time/GSP) + LGAIN * int((1-w_sp) * time/GSP))
 
 
 def esti_time(sample, AM=2500, time=28801.0):
@@ -235,29 +244,30 @@ def getVoyageCrew(prim='SEC', sec='SIC', Anti=2650,
                   pfac=3.5, sfac=2.5):
     df_voy, time, sample, opti = optimizer(prim=prim, sec=sec, Anti=Anti,
                                            pfac=3.5, sfac=2.5)
-    pfac_changer = 0.5
-    sfac_changer = 0.5
+    pfac_changer = INICHANGE
+    sfac_changer = INICHANGE
     changer = False
     opti_old = opti
     counter = 0
+    binfo = True
     while (opti.any()):
         time_old = time
         if opti[0]:
             if changer:
                 pfac += pfac_changer
-                pfac_changer = pfac_changer - 0.1
+                pfac_changer = pfac_changer - CHANGER
             else:
                 pfac -= pfac_changer
             # sfac += 0.05
         if opti[1]:
             if changer:
                 sfac += sfac_changer
-                sfac_changer = sfac_changer - 0.1
+                sfac_changer = sfac_changer - CHANGER
             else:
                 sfac -= sfac_changer
         if not opti[0:2].any():
-            print('Neither prim nor sec attribute are great.'
-                  'Optimization failed')
+            print('prim %s and sec %s are optimized. '
+                  'Further att increasing. ' % (prim, sec))
             break
         else:
             changer = False
@@ -265,7 +275,7 @@ def getVoyageCrew(prim='SEC', sec='SIC', Anti=2650,
                                                    Anti=Anti,
                                                    pfac=pfac, sfac=sfac)
             # print(prim, sec, time_old, time, pfac, sfac, pfac_changer, sfac_changer)
-            if counter > 20:
+            if counter > LOOP:
                 print('Endless loop for %s and %s detected.' % (prim, sec))
                 break
             if time < time_old - 300:
@@ -278,8 +288,9 @@ def getVoyageCrew(prim='SEC', sec='SIC', Anti=2650,
                     break
                 counter += 1
             if (sfac < 1.0) | (pfac < 1.0):
-                print('Other attributes too weak...')
-                break
+                if binfo:
+                    print('prim %s or sec %s very strong compared to other values' %(prim, sec))
+                    binfo = False
     return df_voy, time, sample
 
 
@@ -300,7 +311,48 @@ def optimizer(prim='SEC', sec='SIC', Anti=2650,
     return df_voy, time, sample, opti
 
 
+def config():
+    # set variables
+    config = 'config.txt'
+    if config not in os.listdir(os.getcwd()):
+        print('%s not in directory, default values used.' % config)
+        return
+    f = open('config.txt')
+    data = f.readlines()
+    f.close()
+    global ALIN    # dif/sec linear increase
+    global GSP     # challenge each x seconds
+    global WGAIN   # gain 5 anti matter
+    global LGAIN
+    global GST     # standard challenge every y sec
+    global YSTART  # difficulty at time t = 0 sec
+    global CHANGER  # adjustment of factor reducement
+    global INICHANGE
+    global LOOP
+    for n, line in enumerate(data, 1):
+        if 'ALIN' in line:
+            ALIN = float(line.split()[2])
+        elif 'GSP' in line:
+            GSP = int(line.split()[2])
+        elif 'WGAIN' in line:
+            WGAIN = int(line.split()[2])
+        elif 'LGAIN' in line:
+            LGAIN = int(line.split()[2])
+        elif 'GST' in line:
+            GST = int(line.split()[2])
+        elif 'YSTART' in line:
+            YSTART = int(line.split()[2])
+        elif 'CHANGER' in line:
+            CHANGER = float(line.split()[2])
+        elif 'INICHANGE' in line:
+            INICHANGE = float(line.split()[2])
+        elif 'LOOP' in line:
+            LOOP = float(line.split()[2])
+    #return ALIN, GSP, WGAIN, LGAIN, GST, YSTART, CHANGER
+
+
 if __name__ == '__main__':
+    config()
     while True:
         entered = input("Please choose if you want to analyse your crew "
                         "for all possible voyages or just find the best "
